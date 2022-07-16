@@ -1,5 +1,8 @@
 # Changes and configuration made for Tencent/Real-SR to work on HC18 on Docker or Colab
 
+## Forked version of https://github.com/Tencent/Real-SR, please refer to the official repository.
+## This github is only made for research pourpose regarding Ultra-sound image Super Resolution.
+
 # INDEX
 
 0. Preparazione path e dependencies
