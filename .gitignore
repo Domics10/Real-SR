@@ -1,3 +1,16 @@
+Real-SR/README.md
+Real-SR/codes/pretrained_model/42000_G.pth
+Real-SR/codes/pretrained_model/66000_G.pth
+Real-SR/codes/pretrained_model/96000_G.pth
+Real-SR/codes/pretrained_model/latest_G.pth
+Real-SR/codes/pretrained_model/40000_G.pth
+Real-SR/codes/preprocess/KernelGAN/
+Real-SR/datasets/*
+Real-SR/figures/
+Real-SR/experiments/*
+Real-SR/codes/summary/hc18/*
+Real-SR/results/hc18_results/*
+
 # Created by .ignore support plugin (hsz.mobi)
 ### Example user template template
 ### Example user template
@@ -132,4 +145,3 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-

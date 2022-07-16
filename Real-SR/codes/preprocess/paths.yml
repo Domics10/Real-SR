@@ -1,0 +1,19 @@
+df2k:
+  tdsr:
+    source: '../../ntire20/Corrupted-tr-x'
+    target: '../../ntire20/Corrupted-tr-y'
+    valid:
+dped:
+  clean:
+    hr:
+      train: '../../ntire20/DPEDiphone-tr-x'
+      valid: '../../ntire20/DPEDiphone-va'
+hc18:
+  clean:
+    hr:
+      train: '../../HC18/train_set'
+      val: '../../HC18/val_set'
+datasets:
+  df2k: '../datasets/DF2K'
+  dped: '../datasets/DPED'
+  hc18: '../datasets/hc18'

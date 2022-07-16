@@ -1,0 +1,12 @@
+qui!requirements.txt
+**/.git
+**/.gitignore
+**/.github
+Real-SR/**/*.txt
+**/*.log
+**/.cache
+**/*.md
+Real-SR/figures
+Real-SR/experiments/**
+Real-SR/codes/summary/hc18/**
+Real-SR/results/hc18_results/**

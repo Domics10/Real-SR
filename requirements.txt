@@ -1,0 +1,13 @@
+torch==1.2
+scikit-build
+torchvision
+numpy==1.15.1
+tqdm==4.26.0
+scipy==1.1.0
+pillow==5.2.0
+opencv-python==4.2.0.32
+matplotlib==2.2.3
+lmdb
+pyyaml
+tb-nightly
+future

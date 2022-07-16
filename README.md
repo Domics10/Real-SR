@@ -1,156 +1,254 @@
-# RealSR 
-![logo](figures/logo.jpg)
+# Changes and configuration made for Tencent/Real-SR to work on HC18 on Docker or Colab
 
-Real-World Super-Resolution via Kernel Estimation and Noise Injection (CVPR 2020 Workshops)
+# INDEX
 
-Xiaozhong Ji, Yun Cao, Ying Tai, Chengjie Wang, Jilin Li, and Feiyue Huang
+0. Preparazione path e dependencies
+1. Preparazione dataset
+2. Fase di training
+3. Testing
+4. Impostazioni per la preparazione alla validazione
+5. Avviare la validazione
+6. Esecuzione del training con Docker
 
-*Tencent Youtu Lab*
+---
 
-Our solution is the **winner of CVPR NTIRE 2020 Challenge on Real-World Super-Resolution** in both tracks.
+## 0. **Preparazione path e dependencies**
+Installare le seguenti librerie necessarie per l'esecuzione dello script:
+```bash
+!pip install numpy opencv-python lmdb pyyaml
+!pip install tb-nightly future
+```
+Il seguente manuale d'uso è pensato per l'esecuzione del codice Tencent/Real-SR tramite Google Colab, iniziamo con il collegare Google Colab con il proprio Google drive:
+```bash
+from google.colab import drive
+drive.mount('/content/drive')
+```
+ creare la cartella che conterrà il codice del programma:
+```bash
+%cd drive/MyDrive && mkdir Tencent && cd Tencent
+```
+Dopodiché eseguire il download del codice dal seguente github: 
+```bash
+!git clone https://github.com/Tencent/Real-SR
+```
+## 1. **Preparazione dataset**
 
-(*Official PyTorch Implementation*)
+E' necessario scaricare il dataset HC18 :https://zenodo.org/record/1327317#.YpSdTu7P2iM
+Provvedere poi al caricamento del dataset su Google Drive. Il dataset contiene delle immagini che esulano dallo scopo del progetto, provvediamo quindi ad eliminarle con il seguente codice:
+```bash
+!cd ./HC18/training_set && rm *_Annotation*
+%cd Real-SR/codes
+```
+Sarà necessario poi scaricare il github necessario per la creazione dei kernel: procediamo a posizionarci sulla cartella codes dentro Tencent e a scaricare il GitHUb dello script di training:
+```bash
+!cd preprocess && git clone https://github.com/sefibk/KernelGAN
+```
+Procediamo alla generazione dei kernel, spostiamoci nella cartella KernelGan:
+```bash
+!cd ./preprocess/KernelGAN && CUDA_VISIBLE_DEVICES=0 python3 train.py --X4 --input-dir ../HC18/train_set
+```
+Nella cartella preprocess è necessario modificare il file **paths.yml** e aggiungere la seguente porzione di codice prima della riga datasets e dopo le proprietà del dataset dped:
+```yml
+hc18:
+  clean:
+    hr:
+      train: '../../HC18/train_set'
+      valid: '../../HC18/valid_set'
 
-## Update - September 1, 2020
-- Release training code at Github/Tencent.
+```
+Dopodichè aggiungere tra i path dei datasets esistenti quello di HC18: 
+```yml
+datasets:
+  df2k: '../datasets/DF2K'
+  dped: '../datasets/DPED'
+  hc18: '../datasets/hc18'
+```
+Sempre nello stesso path, modificare il file **create_kernel_dataset.py**. In particolare, modificare la riga 63 con il seguente codice:
+```python
+input_img = Image.open(file).convert('RGB')
+```
+Posizionarsi poi all'iterno del file **collect_noise.py** e modificare la condizione else a riga 49 con il seguente codice:
+```python
+if opt.dataset == 'dped':
+```
+e aggiungere al termine dell'if del dataset riguardante dped la seguente porzione di codice:
+```python
+else:
+        img_dir = PATHS[opt.dataset][opt.artifacts]['hr']['train']
+        noise_dir = PATHS['datasets']['hc18'] + '/hc18_noise'
+        sp = 256
+        max_var = 1000
+        min_mean = 50
+```
+### Creazione dei dataset di training
+Eseguire il seguente codice per creare le immagini HR e LR per il dataset selezionato:
+```bash
+!python3 ./preprocess/create_kernel_dataset.py --dataset hc18 --artifacts clean --kernel_path ./preprocess/KernelGAN/results
+```
+Dopodichè bisogna inserire il rumore nelle immagini LR create:
+```bash
+!python3 ./preprocess/collect_noise.py --dataset hc18 --artifacts clean
+```
+Inserire nella cartella Tencent/Real-SR/codes ed eseguire il comando mkdir pretrained_models, al suo interno, inserire il seguente file: **RRDB_PSNR_x4** disponibile in questo link: https://drive.google.com/drive/u/0/folders/17VYV_SoZZesU6mbxz2dMAIccSSlqLecY
+## 2. **Fase di training**
 
-## Update - May 26, 2020
-- Add [DF2K-JPEG](https://drive.google.com/open?id=1w8QbCLM6g-MMVlIhRERtSXrP-Dh7cPhm) Model.
-- [Executable files](https://drive.google.com/open?id=1-FZPyMtuDfEnAPgSBfePYhv0NorznDPU) based on [ncnn](https://github.com/Tencent/ncnn) are available. Test your own images on windows/linux/macos. More details refer to [realsr-ncnn-vulkan](https://github.com/nihui/realsr-ncnn-vulkan)
-    - Usage - ```./realsr-ncnn-vulkan -i in.jpg -o out.png```
-    - ```-x``` - use ensemble
-    - ```-g 0``` - select gpu id.
+Andare nella cartella Tencent/Real-SR/codes/options/dped e modificare il file **train_kernel_noise.yml**, sostituendo le righe di codice 15, 16 e 17 con il seguente codice:
+```yml
+noise_data: ../datasets/hc18/hc18_noise/
+dataroot_GT: ../datasets/hc18/generated/clean/train_tdsr/HR
+dataroot_LQ: ../datasets/hc18/generated/clean/train_tdsr/LR
+```
+Modificare anche il nome con il nome **HC18_kernel_noise** su riga 2: creerà la cartella con i dati con il nome riportato.
+Eseguire in seguito l'allenamento vero e proprio con il comando:
+```bash
+!CUDA_VISIBLE_DEVICES=0 python3 train.py -opt options/dped/train_kernel_noise.yml
+```
 
-## Introduction
+### 2.0 Riprendere il traning 
+Per riprendere un training interrotto, effettuare le seguente modifiche; andare nella cartella codes/options/deped/train_kernel_noise.yml e modificare la linea 44 come segue :
+```yml
+resume_state: ../experiments/hc18_kernel_noise/training_state/5000.state
+```
+A questo punto può essere riavviato il training.
 
-Recent state-of-the-art super-resolution methods have achieved impressive performance on ideal datasets regardless of blur and noise. However, these methods always fail in real-world image super-resolution, since most of them adopt simple bicubic downsampling from high-quality images to construct Low-Resolution (LR) and High-Resolution (HR) pairs for training which may lose track of frequency-related details. To address this issue, we focus on designing a novel degradation framework for real-world images by estimating various blur kernels as well as real noise distributions. Based on our novel degradation framework, we can acquire LR images sharing a common domain with real-world images. Then, we propose a real-world super-resolution model aiming at better perception. Extensive experiments on synthetic noise data and real-world images demonstrate that our method outperforms the state-of-the-art methods, resulting in lower noise and better visual quality. In addition, our method is the winner of NTIRE 2020 Challenge on both tracks of Real-World Super-Resolution, which significantly outperforms other competitors by large margins. 
+## 3. **Testing**
+Modificare il file **test_dped.yml** nella cartella options/dped
+modificare la linea 1 così:
+```yml
+name-- hc18_results
+```
+linea 13 così:
+```yml
+dataroot_LR: dataset/hc18/generated/clean/train_tdsr/LR
+```
+L'allenamento creerà una coppia di files nella cartella experiments/hc18_kernel_noise/models: **5000_D.pth** e **5000_G.pth**, spostare il file **current_step_G.pth**, dove current_step è lo step a cui si è interrotto il training (5000, 10000, 20000 o 30000), nella cartella pretrained_models e sostituire il nome **current_step_G.pth** nella linea linea 26 del file ./codes/option/dped/test_dped.yml, con il nuovo file: 
+```yml
+pretrained_model_G: ./pretrained_model/current_step_G.pth
+```
 
-![RealSR](figures/arch.png)  
+I risultati finali dell'inferenza saranno generati nella cartella Tencent/Real-SR/results/hc18_results .
 
-If you are interested in this work, please cite our [paper](http://openaccess.thecvf.com/content_CVPRW_2020/papers/w31/Ji_Real-World_Super-Resolution_via_Kernel_Estimation_and_Noise_Injection_CVPRW_2020_paper.pdf)
+Per eseguire il testing eseguire il comando:
+```py
+CUDA_VISIBLE_DEVICES=1,0 python3 test.py -opt options/dped/test_dped.yml
+```
 
-    @InProceedings{Ji_2020_CVPR_Workshops,
-                   author = {Ji, Xiaozhong and Cao, Yun and Tai, Ying and Wang, Chengjie and Li, Jilin and Huang, Feiyue},
-                   title = {Real-World Super-Resolution via Kernel Estimation and Noise Injection},
-                   booktitle = {The IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops},
-                   month = {June},
-                   year = {2020}
-         }
+## 4. **Impostazioni per la preparazione alla validazione**
 
-and challenge report [NTIRE 2020 Challenge on Real-World Image Super-Resolution: Methods and Results](https://arxiv.org/pdf/2005.01996.pdf)
+Per consentire al programma di eseguire la fase di validazione sono necessarie delle modifiche ai codici di alcuni file.
 
-    @article{Lugmayr2020ntire,
-            title={NTIRE 2020 Challenge on Real-World Image Super-Resolution: Methods and Results},
-            author={Andreas Lugmayr, Martin Danelljan, Radu Timofte, Namhyuk Ahn, Dongwoon Bai, Jie Cai, Yun Cao, Junyang Chen, Kaihua Cheng, SeYoung Chun, Wei Deng, Mostafa El-Khamy Chiu, Man Ho, Xiaozhong Ji, Amin Kheradmand, Gwantae Kim, Hanseok Ko, Kanghyu Lee, Jungwon Lee, Hao Li, Ziluan Liu, Zhi-Song Liu, Shuai Liu, Yunhua Lu, Zibo Meng, Pablo Navarrete, Michelini Christian, Micheloni Kalpesh, Prajapati Haoyu, Ren Yong, Hyeok Seo, Wan-Chi Siu, Kyung-Ah Sohn, Ying Tai, Rao Muhammad Umer, Shuangquan Wang, Huibing Wang, Timothy Haoning Wu, Haoning Wu, Biao Yang, Fuzhi Yang, Jaejun Yoo, Tongtong Zhao, Yuanbo Zhou, Haijie Zhuo, Ziyao Zong, Xueyi Zou},
-            journal={CVPR Workshops},
-            year={2020},
-        }
+Creare una cartella **val_set** nel folder Tencent/HC18 e inserire un numero sufficiente di campioni per eseguire la validazione. Nel nostro caso abbiamo inserito 285 immagini provenienti dal test_set nel val_set.
 
-    
+Modificare il file **create_kernel_dataset.py** nel folder Real-Sr/codes/preprocess, aggiungere i path per le immagini generate attraverso i kernel, inserire il seguente codice da riga 39 all'interno dell'**else**:
+```python
+path_vsdsr = PATHS['datasets'][opt.dataset] + '/generated/' + opt.artifacts + '/' + "val" + opt.name + '_sdsr/'
 
- 
-## Visual Results
+path_vtdsr = PATHS['datasets'][opt.dataset] + '/generated/' + opt.artifacts + '/' + "val" + opt.name + '_tdsr/'
+```
+Inserire il path per le immagini di validazione a riga 48:
+```python
+input_source_vdir = PATHS[opt.dataset][opt.artifacts]['hr']['val']
 
-![0](figures/0913.png)
+input_target_vdir = None
+```
+Estrarre i source file dalla cartella di validazione, inserire il seguente codice a riga 48-49 sempre dentro **else:
+```python
+source_files_v = [os.path.join(input_source_vdir, x) for x in os.listdir(input_source_vdir) if utils.is_image_file(x)]
+target_files_v = []
+```
+Creare i path per le immagini che verranno generate dalla validazione, a riga 62 inserire il seguente codice:
+```python
+if not os.path.exists(vtdsr_hr_dir):
 
-![1](figures/0935.png)
+  os.makedirs(vtdsr_hr_dir)
 
-# Quantitative Results Compared with Other Participating Methods
+if not os.path.exists(vtdsr_lr_dir):
 
-'Impressionism' is our team. Note that the final decision is based on MOS (Mean Opinion Score) and MOR (Mean Opinion Rank).
+  os.makedirs(vtdsr_lr_dir)
+```
+Inserire la seguente funzione con gli argomenti: 
+```python
+def app_k(source_files, target_files, opt, tdsr_hr_dir, tdsr_lr_dir, kernel_paths, kernel_num):
+```
+Inseriamo dentro la funzione il blocco di codice già esistente che va da riga 85 a riga 132 
+Aggiungere poi al termine del file le seguenti righe:
+```python
+print("Application to training dataset... ")
 
-![0](figures/track1.png)
+app_k(source_files, target_files, opt, tdsr_hr_dir, tdsr_lr_dir, kernel_paths, kernel_num)
 
-![1](figures/track2.png)
+print("Application to validation dataset... ")
 
-# Qualitative Results Compared with Other Participating Methods
+app_k(source_files_v, target_files_v, opt, vtdsr_hr_dir, vtdsr_lr_dir, kernel_paths, kernel_num)
+```
+Nella stessa folder di **create_kernel_dataset.py**, modificare il file **collect_noise.py**
 
-'Impressionism' is our team. 
+Inserire il codice per selezionare il path per create_kernel dataset, inserire il blocco nell'**else** a riga 55:
+```py
+v_img_dir = PATHS[opt.dataset][opt.artifacts]['hr']['val']
+```
+Il comando seguente aggiunge una cartella per le immagini a cui è stato aggiunto il rumore:
+```py
+v_noise_dir = PATHS['datasets']['hc18'] + '/hc18_noise_val'
+```
+Il seguente comando crea il path, se non esistente, per il rumore, da inserire dopo riga 63:
+```py
+assert not os.path.exists(v_noise_dir)
+    os.mkdir(v_noise_dir)
+```
+Creare una funzione per il blocco di codice da 73 ad 84 con i seguenti paramentri:
+```py
+def app_noise(img_dir, noise_dir, sp, max_var, min_mean):
+```
+Richiamare la funzione in fondo al file, aggiungere il blocco seguente:
+```py
+print("Collecting noise from : ", img_dir, " to ", noise_dir)
+app_noise(img_dir, noise_dir, sp, max_var, min_mean)
+print("Collecting noise from : ", v_img_dir, " to ", v_noise_dir)
+app_noise(v_img_dir, v_noise_dir, sp, max_var, min_mean)
+```
+Posizionarsi sul file **train_kernel_noise.yml**con path: Real-SR/codes/option/dped
+Aggiungi le seguenti configurazioni:
+dentro il tag **dataset** inserire il blocco seguente e riduci**val_freq** a una cifra limitata, nel nostro caso 5000.
+```yml
+val:
+  name: hc18_validation
+  mode: LQGT
+  aug: noise
+  noise_data: ../datasets/hc18/hc18_noise_val/
+  dataroot_GT: ../datasets/hc18/generated/clean/val_tdsr/HR
+  dataroot_LQ: ../datasets/hc18/generated/clean/val_tdsr/LR
+```
+## 5. **Avviare il training con validazione**
+La validazione viene eseguita con gli stessi comandi visti per il training, si riportano per comodità i comandi da eseguire
+```bash
+!python3 ./preprocess/create_kernel_dataset.py --dataset hc18 --artifacts clean --kernel_path ./preprocess/KernelGAN/results
 
-![0](figures/df2k.png)
+!python3 ./preprocess/collect_noise.py --dataset hc18 --artifacts clean
 
-![1](figures/dped.png)
+!CUDA_VISIBLE_DEVICES=0 python3 train.py -opt options/dped/train_kernel_noise.yml
+```
+## 6. **Esecuzione con Docker**
 
+Eseguire le modifiche ai file viste come visto nella sezione Google Colab, dopodiché montare il file **Dockerfile** con questo comando:
+```bash
+docker build -t nome_immagine .
+```
+Eseguire poi lo script seguente per lanciare l'esecuzione del container:
+```bash
+docker run --rm --gpus all --env MODE=modalità  -it -v volume --name  nome_container nome_immagine
+```
+Le modalità si impostano assegnando specifici valori a MODE:
+* kc: creazione del kernel
+* ka: applicazione del kernel alle immagini
+* na: creazione rumore e combinazione con le imagini
+* tr: esecuzione training con validazione
+* te: esecuzione testing
 
+A seconda del valore di MODE, cambiano i volumi:
+* kc: /mnt/disk1/vrai/CVDL2022/Tencent/Real-SR/codes/preprocess/KernelGAN/results:/home/Tencent/Real-SR/codes/preprocess/KernelGAN/results
 
-## Dependencies and Installation
-This code is based on [BasicSR](https://github.com/xinntao/BasicSR).
-
-- Python 3 (Recommend to use [Anaconda](https://www.anaconda.com/download/#linux))
-- [PyTorch >= 1.0](https://pytorch.org/)
-- NVIDIA GPU + [CUDA](https://developer.nvidia.com/cuda-downloads)
-- Python packages: `pip install numpy opencv-python lmdb pyyaml`
-- TensorBoard: 
-  - PyTorch >= 1.1: `pip install tb-nightly future`
-  - PyTorch == 1.0: `pip install tensorboardX`
-
-## Pre-trained models
-- Models for challenge results
-    - [DF2K](https://drive.google.com/open?id=1pWGfSw-UxOkrtbh14GeLQgYnMLdLguOF) for corrupted images with processing noise.
-    - [DPED](https://drive.google.com/open?id=1zZIuQSepFlupV103AatoP-JSJpwJFS19) for real images taken by cell phone camera.
-- Extended models
-    - [DF2K-JPEG](https://drive.google.com/open?id=1w8QbCLM6g-MMVlIhRERtSXrP-Dh7cPhm) for compressed jpeg image. 
- 
-## Testing
-Download dataset from [NTIRE 2020 RWSR](https://competitions.codalab.org/competitions/22220#participate) and unzip it to your path.
-
-For convenient, we provide [Corrupted-te-x](https://drive.google.com/open?id=1GrLxeE-LruddQoAePV1Z7MFclXdZWHMa) and [DPEDiphone-crop-te-x](https://drive.google.com/open?id=19zlofWRxkhsjf_TuRA2oI9jgozifGvxp).
-
-```cd ./codes```
-
-### DF2K: Image processing artifacts
- 1. Modify the configuration file options/df2k/test_df2k.yml
-     - line 1 : 'name' -- dir name for saving the testing results
-     - line 13 : 'dataroot_LR' -- test images dir
-     - line 26 : 'pretrain_model_G' -- pre-trained model for testing
- 2. Run command :
- ```CUDA_VISIBLE_DEVICES=X python3 test.py -opt options/df2k/test_df2k.yml ```
- 3. The output images is saved in '../results/'
- 
-### DPED: Smartphone images 
- 1. Modify the configuration file options/dped/test_dped.yml
-    - line 1 : 'name' -- dir name for saving the testing results
-    - line 13 : 'dataroot_LR' -- test images dir
-    - line 26 : 'pretrain_model_G' -- pre-trained model for testing
- 2. Run command :
- ```CUDA_VISIBLE_DEVICES=X python3 test.py -opt options/dped/test_dped.yml```
- 3. The output images is saved in '../results/'
- 
-
-## Training
-
-### Track 1
- 1. prepare training data
-    - specify dataset paths in './preprocess/path.yml' and create bicubic dataset :
-    ```python3 ./preprocess/create_bicubic_dataset.py --dataset df2k --artifacts tdsr```
-
-    - run the below command to collect high frequency noise from Source :
-    ```python3 ./preprocess/collect_noise.py --dataset df2k --artifacts tdsr```
-    
- 2. train SR model
-    - Modify the configuration file options/df2k/train_bicubic_noise.yml
-    - Run command :
-    ```CUDA_VISIBLE_DEVICES=4,5,6,7 python3 train.py -opt options/df2k/train_bicubic_noise.yml```
-    - checkpoint dir is in '../experiments'
-    
-### Track 2
- 1. prepare training data
-    - Use [KernelGAN](https://github.com/sefibk/KernelGAN) to generate kernels from source images. Clone the repo here. Replace SOURCE_PATH with specific path and run :
-        ``` 
-      cd KernelGAN
-      CUDA_VISIBLE_DEVICES=4,5,6,7 python3 train.py --X4 --input-dir SOURCE_PATH
-        ```
-    
-    - specify dataset paths in './preprocess/path.yml' and generated KERNEL_PATH to kernel create kernel dataset:
-    ```python3 ./preprocess/create_kernel_dataset.py --dataset dped --artifacts clean --kernel_path KERNEL_PATH```
-
-    - run the below command to collect high frequency noise from Source:
-    ```python3 ./preprocess/collect_noise.py --dataset dped --artifacts clean```
-    
- 2. train SR model
-    - Modify the configuration file options/dped/train_kernel_noise.yml
-    - run command :
-    ```CUDA_VISIBLE_DEVICES=4,5,6,7 python3 train.py -opt options/dped/train_kernel_noise.yml```
-    - checkpoint dir is in '../experiments'
- 
- 
+* ka: /mnt/disk1/vrai/CVDL2022/Tencent/Real-SR/datasets:/home/Tencent/Real-SR/datasets
+* na: /mnt/disk1/vrai/CVDL2022/Tencent/Real-SR/datasets:/home/Tencent/Real-SR/datasets
+* tr: /mnt/disk1/vrai/CVDL2022/Tencent/Real-SR/experiments:/home/Tencent/Real-SR/experiments
+* te: /mnt/disk1/vrai/CVDL2022/Tencent/Real-SR/codes/results:/home/Tencent/Real-SR/codes/results
