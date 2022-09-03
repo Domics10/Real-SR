@@ -74,7 +74,7 @@ To run the test, execute the following line:
 ```py
 CUDA_VISIBLE_DEVICES=1,0 python3 test.py -opt options/dped/test_dped.yml
 ```
-## 4. **Esecuzione con Docker**
+## 4. **Execution using Docker**
 
 To use Docker and entrypoint.sh, simply run the following commands:
 ```bash
